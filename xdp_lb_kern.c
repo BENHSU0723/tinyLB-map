@@ -7,6 +7,19 @@
 #define LB 5
 #define HTTP_PORT 80
 
+// struct bpf_map_def SEC("maps") my_map = {  
+// 	.type = BPF_MAP_TYPE_HASH,  
+// 	.key_size = 8,  
+// 	.value_size = sizeof(unsigned int),  
+// 	.max_entries = 256,
+// };
+// struct {
+// 	__uint(type, BPF_MAP_TYPE_ARRAY);
+// 	__type(key, char[20]);
+// 	__type(value, unsigned int);
+// 	__uint(max_entries, 4096);
+// } my_map SEC(".maps");
+
 SEC("xdp_lb")
 int xdp_load_balancer(struct xdp_md *ctx)
 {
@@ -32,7 +45,26 @@ int xdp_load_balancer(struct xdp_md *ctx)
 
     int flag = 1;
 
-    if (iph->saddr == IP_ADDRESS(CLIENT) && bpf_ntohs(tcph->dest) == HTTP_PORT)
+    char key[8] = "client";
+    // unsigned int client_IP=IP_ADDRESS(4);
+    // int result=bpf_map_update_elem(&my_map,&key,&client_IP,BPF_ANY);
+    // if (result!=0){
+    //     bpf_printk("Error when bpf_map_update_elem :%d", result);
+    //     return -1;
+    // }
+    // unsigned int *client_map = bpf_map_lookup_elem(&my_map, &key);
+    struct bpf_object *obj=bpf_object__open("/sys/fs/bpf/xdp_map");
+    if (libbpf_get_error(obj)) {
+        printf("ERROR: opening BPF object file failed\n");
+    }
+
+    struct bpf_map *my_map=bpf_object__find_map_by_name(obj,"hash_map");    
+    if (libbpf_get_error(my_map)) {
+        printf("ERROR: finding map\n");
+    }
+    unsigned int *client_map = bpf_map_lookup_elem(&my_map, &key);
+
+    if (iph->saddr == *client_map && bpf_ntohs(tcph->dest) == HTTP_PORT)// IP_ADDRESS(CLIENT)
     {
         bpf_printk("Got http request from %x", iph->saddr);
         char dst = BACKEND_A;
@@ -55,6 +87,8 @@ int xdp_load_balancer(struct xdp_md *ctx)
     }
 
     iph->saddr = IP_ADDRESS(LB);
+    bpf_printk("LB IP address :%x", iph->saddr);
+
     eth->h_source[5] = LB;
 
     iph->check = iph_csum(iph);

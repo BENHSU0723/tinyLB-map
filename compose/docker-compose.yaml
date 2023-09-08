@@ -13,7 +13,7 @@ services:
   lb:
     container_name: lb
     image: ianchen0119/lb:latest
-    command: bash -c "make run"
+    command: bash -c "make pre && make run && sleep infinity"
     privileged: true
     cap_add:
       - NET_ADMIN
